@@ -1,58 +1,74 @@
-const anchor = require("@project-serum/anchor");
-const assert = require("assert");
-const {
-  TOKEN_PROGRAM_ID,
-  sleep,
-  getTokenAccount,
-  createMint,
-  createTokenAccount,
-  mintToAccount,
-} = require("./utils");
+import * as anchor from "@project-serum/anchor";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { PublicKey } from "@solana/web3.js";
+import { expect } from 'chai';
+import * as fs from "fs";
+import * as utils from "./utils";
+
+// const {
+//   TOKEN_PROGRAM_ID,
+//   sleep,
+//   getTokenAccount,
+//   createMint,
+//   createTokenAccount,
+//   mintToAccount,
+// } = require("./utils");
 
 describe("ido-pool", () => {
-  const provider = anchor.Provider.local();
+  const programId = new anchor.web3.PublicKey("idosCTwC7fvCbnnzhpWqbnmTWsNwsVy2cPBjioKEZeo");
+  const idl = JSON.parse(fs.readFileSync("./target/idl/ido_pool.json").toString());
 
-  // Configure the client to use the local cluster.
-  anchor.setProvider(provider);
+  let key = JSON.parse(fs.readFileSync(process.env.MY_WALLET, "utf8"));
 
-  const program = anchor.workspace.IdoPool;
+  const myWallet = anchor.web3.Keypair.fromSecretKey(new Uint8Array(key));
+
+  const connection = new anchor.web3.Connection(
+    "https://api.devnet.solana.com/",
+    "confirmed"
+  );
+
+  const walletWrapper = new anchor.Wallet(myWallet);
+  const provider = new anchor.Provider(connection, walletWrapper, {
+    preflightCommitment: "recent",
+  });
+  const program = new anchor.Program(idl, programId, provider);
 
   // All mints default to 6 decimal places.
   const watermelonIdoAmount = new anchor.BN(5000000);
 
   // These are all of the variables we assume exist in the world already and
   // are available to the client.
-  let usdcMint = null;
-  let watermelonMint = null;
-  let creatorUsdc = null;
-  let creatorWatermelon = null;
+  let usdcMint: PublicKey = null;
+  let watermelonMint: PublicKey = null;
+  let creatorUsdc: PublicKey = null;
+  let creatorWatermelon: PublicKey = null;
 
   it("Initializes the state-of-the-world", async () => {
-    usdcMint = await createMint(provider);
-    watermelonMint = await createMint(provider);
-    creatorUsdc = await createTokenAccount(
+    usdcMint = await utils.createMint(provider, provider.wallet.publicKey);
+    watermelonMint = await utils.createMint(provider, provider.wallet.publicKey);
+    creatorUsdc = await utils.createTokenAccount(
       provider,
       usdcMint,
       provider.wallet.publicKey
     );
-    creatorWatermelon = await createTokenAccount(
+    creatorWatermelon = await utils.createTokenAccount(
       provider,
       watermelonMint,
       provider.wallet.publicKey
     );
     // Mint Watermelon tokens the will be distributed from the IDO pool.
-    await mintToAccount(
+    await utils.mintToAccount(
       provider,
       watermelonMint,
       creatorWatermelon,
       watermelonIdoAmount,
       provider.wallet.publicKey
     );
-    creator_watermelon_account = await getTokenAccount(
+    let creator_watermelon_account = await utils.getTokenAccount(
       provider,
       creatorWatermelon
     );
-    assert.ok(creator_watermelon_account.amount.eq(watermelonIdoAmount));
+    expect(creator_watermelon_account.amount).to.eq(watermelonIdoAmount);
   });
 
   // These are all variables the client will have to create to initialize the
@@ -77,13 +93,13 @@ describe("ido-pool", () => {
 
     // Pool doesn't need a Redeemable SPL token account because it only
     // burns and mints redeemable tokens, it never stores them.
-    redeemableMint = await createMint(provider, poolSigner);
-    poolWatermelon = await createTokenAccount(
+    redeemableMint = await utils.createMint(provider, poolSigner);
+    poolWatermelon = await utils.createTokenAccount(
       provider,
       watermelonMint,
       poolSigner
     );
-    poolUsdc = await createTokenAccount(provider, usdcMint, poolSigner);
+    poolUsdc = await utils.createTokenAccount(provider, usdcMint, poolSigner);
 
     poolAccount = anchor.web3.Keypair.generate();
     const nowBn = new anchor.BN(Date.now() / 1000);
@@ -119,11 +135,11 @@ describe("ido-pool", () => {
       }
     );
 
-    creators_watermelon_account = await getTokenAccount(
+    let creators_watermelon_account = await poolWatermelon.getTokenAccount(
       provider,
       creatorWatermelon
     );
-    assert.ok(creators_watermelon_account.amount.eq(new anchor.BN(0)));
+    expect(creators_watermelon_account.amount).to.eq(new anchor.BN(0));
   });
 
   // We're going to need to start using the associated program account for creating token accounts
@@ -137,22 +153,22 @@ describe("ido-pool", () => {
   it("Exchanges user USDC for redeemable tokens", async () => {
     // Wait until the IDO has opened.
     if (Date.now() < startIdoTs.toNumber() * 1000) {
-      await sleep(startIdoTs.toNumber() * 1000 - Date.now() + 1000);
+      await utils.sleep(startIdoTs.toNumber() * 1000 - Date.now() + 1000);
     }
 
-    userUsdc = await createTokenAccount(
+    userUsdc = await utils.createTokenAccount(
       provider,
       usdcMint,
       provider.wallet.publicKey
     );
-    await mintToAccount(
+    await utils.mintToAccount(
       provider,
       usdcMint,
       userUsdc,
       firstDeposit,
       provider.wallet.publicKey
     );
-    userRedeemable = await createTokenAccount(
+    userRedeemable = await utils.createTokenAccount(
       provider,
       redeemableMint,
       provider.wallet.publicKey
@@ -175,10 +191,10 @@ describe("ido-pool", () => {
     } catch (err) {
       console.log("This is the error message", err.toString());
     }
-    poolUsdcAccount = await getTokenAccount(provider, poolUsdc);
-    assert.ok(poolUsdcAccount.amount.eq(firstDeposit));
-    userRedeemableAccount = await getTokenAccount(provider, userRedeemable);
-    assert.ok(userRedeemableAccount.amount.eq(firstDeposit));
+    let poolUsdcAccount = await utils.getTokenAccount(provider, poolUsdc);
+    expect(poolUsdcAccount.amount).to.eq(firstDeposit);
+    let userRedeemableAccount = await utils.getTokenAccount(provider, userRedeemable);
+    expect(userRedeemableAccount.amount).to.eq(firstDeposit);
   });
 
   // 23 usdc
@@ -186,19 +202,19 @@ describe("ido-pool", () => {
   let totalPoolUsdc = null;
 
   it("Exchanges a second users USDC for redeemable tokens", async () => {
-    secondUserUsdc = await createTokenAccount(
+    let secondUserUsdc = await utils.createTokenAccount(
       provider,
       usdcMint,
       provider.wallet.publicKey
     );
-    await mintToAccount(
+    await utils.mintToAccount(
       provider,
       usdcMint,
       secondUserUsdc,
       secondDeposit,
       provider.wallet.publicKey
     );
-    secondUserRedeemable = await createTokenAccount(
+    let secondUserRedeemable = await utils.createTokenAccount(
       provider,
       redeemableMint,
       provider.wallet.publicKey
@@ -219,13 +235,13 @@ describe("ido-pool", () => {
     });
 
     totalPoolUsdc = firstDeposit.add(secondDeposit);
-    poolUsdcAccount = await getTokenAccount(provider, poolUsdc);
-    assert.ok(poolUsdcAccount.amount.eq(totalPoolUsdc));
-    secondUserRedeemableAccount = await getTokenAccount(
+    let poolUsdcAccount = await utils.getTokenAccount(provider, poolUsdc);
+    expect(poolUsdcAccount.amount).to.eq(totalPoolUsdc);
+    let secondUserRedeemableAccount = await utils.getTokenAccount(
       provider,
       secondUserRedeemable
     );
-    assert.ok(secondUserRedeemableAccount.amount.eq(secondDeposit));
+    expect(secondUserRedeemableAccount.amount).to.eq(secondDeposit);
   });
 
   const firstWithdrawal = new anchor.BN(2_000_000);
@@ -246,19 +262,19 @@ describe("ido-pool", () => {
     });
 
     totalPoolUsdc = totalPoolUsdc.sub(firstWithdrawal);
-    poolUsdcAccount = await getTokenAccount(provider, poolUsdc);
-    assert.ok(poolUsdcAccount.amount.eq(totalPoolUsdc));
-    userUsdcAccount = await getTokenAccount(provider, userUsdc);
-    assert.ok(userUsdcAccount.amount.eq(firstWithdrawal));
+    let poolUsdcAccount = await utils.getTokenAccount(provider, poolUsdc);
+    expect(poolUsdcAccount.amount).to.eq(totalPoolUsdc);
+    let userUsdcAccount = await utils.getTokenAccount(provider, userUsdc);
+    expect(userUsdcAccount.amount).to.eq(firstWithdrawal);
   });
 
   it("Exchanges user Redeemable tokens for watermelon", async () => {
     // Wait until the IDO has opened.
     if (Date.now() < endIdoTs.toNumber() * 1000) {
-      await sleep(endIdoTs.toNumber() * 1000 - Date.now() + 2000);
+      await utils.sleep(endIdoTs.toNumber() * 1000 - Date.now() + 2000);
     }
     let firstUserRedeemable = firstDeposit.sub(firstWithdrawal);
-    userWatermelon = await createTokenAccount(
+    let userWatermelon = await utils.createTokenAccount(
       provider,
       watermelonMint,
       provider.wallet.publicKey
@@ -278,20 +294,26 @@ describe("ido-pool", () => {
       },
     });
 
-    poolWatermelonAccount = await getTokenAccount(provider, poolWatermelon);
+    let poolWatermelonAccount = await utils.getTokenAccount(provider, poolWatermelon);
     let redeemedWatermelon = firstUserRedeemable
       .mul(watermelonIdoAmount)
       .div(totalPoolUsdc);
     let remainingWatermelon = watermelonIdoAmount.sub(redeemedWatermelon);
-    assert.ok(poolWatermelonAccount.amount.eq(remainingWatermelon));
-    userWatermelonAccount = await getTokenAccount(provider, userWatermelon);
-    assert.ok(userWatermelonAccount.amount.eq(redeemedWatermelon));
+    expect(poolWatermelonAccount.amount).to.eq(remainingWatermelon);
+    let userWatermelonAccount = await utils.getTokenAccount(provider, userWatermelon);
+    expect(userWatermelonAccount.amount).to.eq(redeemedWatermelon);
   });
 
   it("Exchanges second users Redeemable tokens for watermelon", async () => {
-    secondUserWatermelon = await createTokenAccount(
+    let secondUserWatermelon = await utils.createTokenAccount(
       provider,
       watermelonMint,
+      provider.wallet.publicKey
+    );
+
+    let secondUserRedeemable = await utils.createTokenAccount(
+      provider,
+      redeemableMint,
       provider.wallet.publicKey
     );
 
@@ -309,8 +331,8 @@ describe("ido-pool", () => {
       },
     });
 
-    poolWatermelonAccount = await getTokenAccount(provider, poolWatermelon);
-    assert.ok(poolWatermelonAccount.amount.eq(new anchor.BN(0)));
+    let poolWatermelonAccount = await utils.getTokenAccount(provider, poolWatermelon);
+    expect(poolWatermelonAccount.amount).to.eq(new anchor.BN(0));
   });
 
   it("Withdraws total USDC from pool account", async () => {
@@ -326,9 +348,9 @@ describe("ido-pool", () => {
       },
     });
 
-    poolUsdcAccount = await getTokenAccount(provider, poolUsdc);
-    assert.ok(poolUsdcAccount.amount.eq(new anchor.BN(0)));
-    creatorUsdcAccount = await getTokenAccount(provider, creatorUsdc);
-    assert.ok(creatorUsdcAccount.amount.eq(totalPoolUsdc));
+    let poolUsdcAccount = await utils.getTokenAccount(provider, poolUsdc);
+    expect(poolUsdcAccount.amount).to.eq(new anchor.BN(0));
+    let creatorUsdcAccount = await utils.getTokenAccount(provider, creatorUsdc);
+    expect(creatorUsdcAccount.amount).to.eq(totalPoolUsdc);
   });
 });

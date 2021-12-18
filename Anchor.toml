@@ -1,3 +1,12 @@
+[programs.localnet]
+ido_pool = "idosCTwC7fvCbnnzhpWqbnmTWsNwsVy2cPBjioKEZeo"
+
+[registry]
+url = "https://anchor.projectserum.com"
+
 [provider]
-cluster = "mainnet"
-wallet = "~/.config/solana/bwf.json"
+cluster = "localnet"
+wallet = "/Users/fa/.config/solana/id.json"
+
+[scripts]
+test = "ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
